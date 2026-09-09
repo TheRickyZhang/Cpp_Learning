@@ -1,22 +1,22 @@
-#include <atomic>
 #include <bits/stdc++.h>
 using namespace std;
 
 /*
 * A shared pointer basically manages the underlying lifetime of a pointer so we can share the same resource
 * A simplified version might might store the pointer in the control block, but we should be careful that the point is to have multiple independent owners, NOT avoid repetitive pointer storing.
-* Note it is possible to have aliasing. For instance, if we do: struct Foo { int x; }, we can set:
-* p = shared_ptr<Foo>(1);
-* q = shared_ptr<int>(p, &p.x); -> q contributes to p's pointer lifetime, but will return the corresponding int* instead of Foo*
-* Thus an ideal design would store T* per object, not in the control block
 * First, implement functions assuming we have increment() and decrement(). Remember to prefer incrementing before decrementing to avoid lifetime issues
 * Then implement increment / decrement. For thread safety, 
 *
+* Extensions:
+* Weak pointers: conceptually, if you have two pointers pointing at each other,
+*
+* This simple implementation assumes that every shared pointer sharing the same control block will have the same pointer. But that is not always in case in practice, due to constructing from derived class or aliasing constructors (make the pointer something totally separate).
+* Implementing this is very complex.
 */
 
 struct control_block {
   std::atomic<int> count = 1;
-  std::atomic<int> weakCount = 1;
+  // std::atomic<int> weakCount = 1;
 };
 
 template <typename T>
@@ -32,7 +32,6 @@ class shared_ptr {
   // Be careful - you need pointer references here to assign the actual address to nullptr
   void decrement() {
     if(!cb) return;
-    // 
     if(cb->count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
       delete p;
       delete cb;

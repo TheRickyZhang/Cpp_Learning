@@ -24,7 +24,7 @@ To give you an idea on impact of some performance, just based on submission timi
 
 template<typename T>
 class SPSCQueue {
-
+    // static_assert(std::has_single_bit(N), "capacity must be a power of two");
 public:
   SPSCQueue(size_t n) : cap(n), mask(n-1) {
     if(!(n > 2 && has_single_bit(n))) {
@@ -45,40 +45,26 @@ public:
 
   // Note how we can clearly see the delineation between "our thread" and "other threads", corresponding to the memory order we use
   bool push(const T& x) noexcept requires is_nothrow_copy_assignable_v<T> {
-    size_t h = p.cached_head;
-    size_t t = p.own_tail;
+    size_t& h = p.cached_head;
+    size_t t = p.tail.load(memory_order_relaxed);
     if(t - h >= cap) {
-      h = p.cached_head = c.head.load(memory_order_acquire);  
+      h = c.head.load(memory_order_acquire);  
       if(t - h >= cap)  return false;
     }
     a[pos(t)] = x;
-    p.own_tail = t+1;
-    p.tail.store(t+1, memory_order_release);
-    return true;
-  }
-  bool push(T&& x) noexcept requires is_nothrow_move_assignable_v<T> {
-    size_t h = p.cached_head;
-    size_t t = p.own_tail;
-    if(t - h >= cap) {
-      h = p.cached_head = c.head.load(memory_order_acquire);  
-      if(t - h >= cap)  return false;
-    }
-    a[pos(t)] = std::move(x);
-    p.own_tail = t+1;
     p.tail.store(t+1, memory_order_release);
     return true;
   }
 
   bool pop(T& out) noexcept requires is_nothrow_move_assignable_v<T> {
-    size_t h = c.own_head;
-    size_t t = c.cached_tail;
+    size_t h = c.head.load(memory_order_relaxed);
+    size_t& t = c.cached_tail;
     if(h == t) {
-      t = c.cached_tail = p.tail.load(memory_order_acquire);
+      t = p.tail.load(memory_order_acquire);
       if(h == t)  return false;
     }
     size_t i = pos(h);
     out = std::move(a[i]);
-    c.own_head = h+1;
     c.head.store(h+1, memory_order_release);
     return true;
   }
@@ -97,12 +83,10 @@ private:
   static constexpr int ALIGN = hardware_destructive_interference_size; 
   struct alignas(ALIGN) ProducerState {
     atomic<size_t> tail{0};
-    size_t own_tail{0};
     size_t cached_head{0};
   };
   struct alignas(ALIGN) ConsumerState {
     atomic<size_t> head{0};
-    size_t own_head{0};
     size_t cached_tail{0};
   };
 
