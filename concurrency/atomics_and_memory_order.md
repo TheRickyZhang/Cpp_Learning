@@ -9,6 +9,13 @@ Compared to locks such as mutexes / condition variables, atomics can have less o
 - Bad when there is a lot of cache coherence traffic
 - Good when you have rare coordination with relatively simple state
 
+Not always lock-free, depends:
+- Does the CPU have a hardware instruction capable of atomically operating on an object with this size/alignment?
+- Generally, aligned small objects <= 8 bytes are usually lock-free, 16 architecture-dependent
+- Straddling cache line boundary is bad, because cache coherence policy can't guarantee atomicity
+Check with is_always_lock_free
+
+
 # Memory Orders
 Note that std::atomic give you atomicity, and you decide ordering.
 

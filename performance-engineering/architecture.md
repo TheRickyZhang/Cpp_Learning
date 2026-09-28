@@ -16,3 +16,10 @@ SSE = 128 bits (4 ints/instruction), AVX2 = 256 bits, AVX-512 = 512 bits, aka xm
 
 Larger registers generally better but can sometimes require more shuffling.
 
+# Some notes from Algorithmica
+x86 lea instruction = load effective address, does ax + b for a = 2, 4, 8, so actually helps with multiplying by 3, 5, and 9 faster
+
+Conditional jump = uses special flags register populated by previous instructions such as cmp.
+Many instructions also read/write FLAGS register as byproduct, which can be leveraged by compilers
+
+push, pop, call, ret are syntactic sugar for the underlying stack mechanisms

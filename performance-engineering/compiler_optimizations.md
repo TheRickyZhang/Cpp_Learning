@@ -10,3 +10,9 @@ Named Return Value Optimization (NRVO):
 - Thus, something like: f(vector<int> v) { return v; } will not use NRVO since the copy of v in the scope of the function already has a set address determined by ABI.
 - Technically optional, but widely supported
 - Can sometimes be disabled by explicitly using std::move
+
+`[[unlikely]]`
+- Attribute that modifies compiler-generated machine code layout (totally separate from branch predictor CPU)
+- Instead of inlining the calls, we have a jump on the unlikely condition to a totally separate section, so that the "hot" code is contiguous
+- Which improves instruction fetching / branch prediction as a result
+
