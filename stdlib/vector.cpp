@@ -134,6 +134,7 @@ private:
       if (sz > 0) {
         // we move if it is nothrow or not copyable. A bit confusing but that's
         // because we're more leniant on allowing throwable move constructors.
+        // This pattern is pretty common - intuition is that to preserve strong exception safety, moves must be "safe" to do to revert an exception leaving original in unspecified state, otherwise we fall back to copying
         if constexpr (std::is_nothrow_move_constructible_v<T> ||
                       !std::is_copy_constructible_v<T>) {
           std::uninitialized_move(data, data + sz, new_data);

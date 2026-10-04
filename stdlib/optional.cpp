@@ -1,154 +1,210 @@
 #include <bits/stdc++.h>
 #include <cassert>
+using namespace std;
 
-struct nullopt_t {
-  explicit constexpr nullopt_t(int) {}
-};
-inline constexpr nullopt_t nullopt{0};
+/*
+ * optional must store a T inline. We shouldn't be doing anything on the heap.
+ * There are two options
+ * Most direct is to use a byte buffer and reinterpret_cast the bytes to T when
+ * trying to access it.
+ */
+namespace temp {
 
-struct bad_optional_access : std::exception {
-  const char* what() const noexcept override { return "bad optional access"; }
-};
-
-template <typename T> class Optional {
-  // Raw storage: correctly sized and aligned for T, but no T is constructed
-  // yet.
-  alignas(T) std::byte buf_[sizeof(T)];
-  bool has_ = false;
-
-  T* ptr() noexcept { return std::launder(reinterpret_cast<T*>(buf_)); }
-  const T* ptr() const noexcept {
-    return std::launder(reinterpret_cast<const T*>(buf_));
-  }
-
+template <class T> class optional {
 public:
-  // --- construction / destruction ---
-  Optional() noexcept = default;
-  Optional(nullopt_t) noexcept {}
-  Optional(const T& v) { emplace(v); }
-  Optional(T&& v) { emplace(std::move(v)); }
+  optional() = default;
 
-  Optional(const Optional& o) {
-    if (o.has_)
-      emplace(*o);
-  }
-  Optional(Optional&& o) noexcept(std::is_nothrow_move_constructible_v<T>) {
-    if (o.has_)
-      emplace(std::move(
-          *o)); // o stays engaged, holding a moved-from T (same as std)
-  }
+  // Review of type semantics:
+  // If T is fixed, which includes when it is templated at a higher level, then
+  // we have the following rules for binding: T, const T& -> bind to both lvalue
+  // and lvalue T& -> only bind to lvalue T&& -> only bind to rvalue
 
-  ~Optional() { reset(); }
+  // However, if the function itself is templated, then all these are the same
+  // EXCEPT for special forwarding reference: U&& means: use reference
+  // collapsing to preserve original category
 
-  // --- assignment ---
-  Optional& operator=(nullopt_t) noexcept {
-    reset();
-    return *this;
-  }
-  Optional& operator=(const Optional& o) {
-    if (this == &o)
-      return *this;
-    if (!o.has_)
-      reset();
-    else if (has_)
-      *ptr() = *o; // both engaged: reuse T's copy-assignment
-    else
-      emplace(*o); // only source engaged: construct in place
-    return *this;
-  }
-  Optional&
-  operator=(Optional&& o) noexcept(std::is_nothrow_move_constructible_v<T> &&
-                                   std::is_nothrow_move_assignable_v<T>) {
-    if (!o.has_)
-      reset();
-    else if (has_)
-      *ptr() = std::move(*o);
-    else
-      emplace(std::move(*o));
-    return *this;
+  // Approximate overload selection hierarchy:
+  template <typename U = T>
+    requires(!is_same_v<remove_cvref_t<U>,
+                        optional>) // don't shadow copy/move constructors
+  optional(U&& u) {
+    construct_at(
+        forward<U>(u)); // Forward is needed here even though we already have
+                        // either U or U& deduced, because usage of named t
+                        // would normally always be an lvalue
+    active = true;
   }
 
-  // --- modifiers ---
-  template <typename... Args> T& emplace(Args&&... args) {
-    reset(); // if T's constructor throws below, we're left empty (same as std)
-    ::new (static_cast<void*>(buf_)) T(std::forward<Args>(args)...);
-    has_ = true;
-    return *ptr();
+  // On the other hand, these are special / have different semantics so we can't
+  // use same forwarding pattern
+  optional(const optional& o) {
+    if (o.active) {
+      construct_at(buf, *o);
+      active = true;
+    }
   }
-  void reset() noexcept {
-    if (has_) {
-      ptr()->~T(); // manual destructor call: we constructed it with placement
-                   // new
-      has_ = false;
+  optional(optional&& o) {
+    if (o.active) {
+      construct_at(buf, move(*o));
+      active = true;
     }
   }
 
-  // --- observers ---
-  bool has_value() const noexcept { return has_; }
-  explicit operator bool() const noexcept { return has_; }
-
-  T& operator*() & noexcept { return *ptr(); } // unchecked, like std
-  const T& operator*() const& noexcept { return *ptr(); }
-  T* operator->() noexcept { return ptr(); }
-  const T* operator->() const noexcept { return ptr(); }
-
-  T& value() & {
-    if (!has_)
-      throw bad_optional_access{};
-    return *ptr();
-  }
-  const T& value() const& {
-    if (!has_)
-      throw bad_optional_access{};
-    return *ptr();
+  ~optional() {
+    if (active) {
+      destroy_at(buf);
+    }
   }
 
-  template <typename U> T value_or(U&& fallback) const& {
-    return has_ ? *ptr() : static_cast<T>(std::forward<U>(fallback));
+  // Recall that the copy-and-swap idiom would cover BOTH copy and move
+  // assignment operators by allowing both to bind to a T. But it pays a slight
+  // performance cost by always allocating new storage optional&
+  // operator=(optional o) {
+  //    swap(*this, o);
+  //    return *this
+  // }
+
+  optional& operator=(const optional& o) {
+    if (this == &o)
+      return *this;
+    if (active && o.active) {
+      *this = *o;
+    } else {
+      if (active)
+        destroy_at(buf);
+      if (o.active)
+        construct_at(buf, *o);
+    }
+    return *this;
   }
+
+  optional& operator=(optional&& o) {
+    swap(buf, o.buf);
+    swap(active, o.active);
+    return *this;
+  }
+
+  T& operator*() { return *reinterpret_cast<T>(buf); }
+  // Recall that normally -> operates on pointers, so by overloading we are
+  // stating which pointer it should refer to
+  T* operator->() { return reinterpret_cast<T>(buf); }
+
+  bool has_value() { return active; }
+
+private:
+  // Generally speaking, swapping raw buffers can be incorrect behavior, because
+  // if you swap pointers to the bytes as well, you get reversed semantics
+  alignas(T) std::byte buf[sizeof(T)];
+  bool active{};
+
+  // What std::launder does is basically tell compiler to use the object that is
+  // actually at the address, not what it might optimize via previous
+  // assumptions TLDR: compiler assumes through pointers, not addresses. If you
+  // modify byte*, that doesn't tell anything about an established T*, even
+  // though they are the same address.
+  // TLDR: reinterpret_cast doesn't establish provenance of the object
+  T* ptr() { return launder(reinterpret_cast<T*>(buf)); }
+  const T* ptr() const { return launder(reinterpret_cast<const T*>(buf)); }
 };
 
-// ---------------- tests ----------------
-struct Counted {
-  static inline int alive = 0;
-  int x;
-  Counted(int v) : x(v) { ++alive; }
-  Counted(const Counted& o) : x(o.x) { ++alive; }
-  Counted(Counted&& o) noexcept : x(o.x) { ++alive; }
-  Counted& operator=(const Counted&) = default;
-  Counted& operator=(Counted&&) = default;
-  ~Counted() { --alive; }
+} // namespace temp
+
+/*
+ * This is correct but there are a couple issues with the current code
+ *
+ * 1. The constructor, destructor, etc. are not trivial because we provided
+ * specific overloads, but should be if T is trivial itself (int)
+ * - (Trivially constructible types can be passed via registers, rather than
+ * being put in stack. Also, bulk operations can be reduced to a memcpy)
+ *
+ * The goal is to "pass down" trivial copyableness.
+ * C++ 20 approach is to write two handlers, one gated by concept
+ * optional(const optional&) requires is_trivially_constructible_v<T> = default;
+ *
+ * 2. Union "front-loads" the type info
+ * It is the languages already existing method for representing byte storage
+ * that could be multiple type
+ * - Having a dummy char{} also in the union can help with constexpr-ness, since
+ * it guarantees that the union always has a live value
+ */
+
+// code that just uses union
+// Sort of handles all the problems, since declaring union doesn't declare lifetime until you construct_at(&storage.value) yourself, so perfect fit.
+
+// Note that union works at a level below what C++ can represent to give you the provenance of the types of its possible representations for free.
+
+template <class T> class optional {
+public:
+  constexpr optional() : dummy_{} {}
+
+  template <typename U = T>
+    requires(!is_same_v<remove_cvref_t<U>, optional> &&
+             is_constructible_v<T, U &&>)
+  constexpr optional(U&& u) : val(std::forward<U>(u)), active(true) {}
+
+  constexpr optional(const optional& o) : dummy_{} {
+    if (o.active) {
+      std::construct_at(&val, o.val);
+      active = true;
+    }
+  }
+
+  constexpr optional(optional&& o) noexcept(is_nothrow_move_constructible_v<T>)
+      : dummy_{} {
+    if (o.active) {
+      std::construct_at(&val, std::move(o.val));
+      active = true;
+    }
+  }
+
+  constexpr optional& operator=(const optional& o) {
+    if (active && o.active)
+      val = o.val;
+    else if (o.active) {
+      std::construct_at(&val, o.val);
+      active = true;
+    } else if (active) {
+      std::destroy_at(&val);
+      active = false;
+    }
+    return *this;
+  }
+
+  constexpr optional&
+  operator=(optional&& o) noexcept(is_nothrow_move_assignable_v<T> &&
+                                   is_nothrow_move_constructible_v<T>) {
+    if (active && o.active)
+      val = std::move(o.val);
+    else if (o.active) {
+      std::construct_at(&val, std::move(o.val));
+      active = true;
+    } else if (active) {
+      std::destroy_at(&val);
+      active = false;
+    }
+    return *this;
+  }
+
+  constexpr ~optional() {
+    if (active)
+      std::destroy_at(&val);
+  }
+
+  constexpr T& operator*() & { return val; }
+  constexpr T* operator->() { return &val; }
+  constexpr bool has_value() const { return active; }
+
+  constexpr void reset() {
+    if (active) {
+      std::destroy_at(&val);
+      active = false;
+    }
+  }
+
+private:
+  union {
+    char dummy_;
+    T val;
+  };
+  bool active = false;
 };
-
-int main() {
-  {
-    Optional<Counted> a;
-    assert(!a && Counted::alive == 0);
-    a.emplace(5);
-    assert(a && a->x == 5 && Counted::alive == 1);
-
-    Optional<Counted> b = a; // copy ctor
-    assert(b->x == 5 && Counted::alive == 2);
-    b = nullopt; // reset
-    assert(!b && Counted::alive == 1);
-    b = a;                   // copy-assign into empty
-    a = Optional<Counted>{}; // move-assign empty -> destroys a's value
-    assert(!a && b && Counted::alive == 1);
-    assert(b.value_or(Counted{9}).x == 5);
-    assert(a.value_or(Counted{9}).x == 9);
-  }
-  assert(Counted::alive == 0); // no leaks
-
-  Optional<std::string> s{std::string("hello")};
-  Optional<std::string> t = std::move(s);
-  assert(*t == "hello" && s.has_value()); // moved-from s is still engaged
-
-  bool threw = false;
-  try {
-    Optional<int>{}.value();
-  } catch (const bad_optional_access&) {
-    threw = true;
-  }
-  assert(threw);
-  return 0;
-}

@@ -79,7 +79,7 @@ public:
 } // namespace ricky
 
 
-// template<typename T, typename... Args
-// std::unique_ptr<T>& make_unique(Args&&... args) {
-//   return std::unique_ptr<T>(new T(std::forward(args...))); 
-// }
+template<typename T, typename... Args>
+unique_ptr<T>& make_unique(Args&&... args) {
+  return unique_ptr<T>(new T(forward(args...))); 
+}

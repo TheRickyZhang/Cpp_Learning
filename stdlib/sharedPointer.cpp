@@ -1,7 +1,11 @@
 #include <bits/stdc++.h>
 using namespace std;
 
+namespace basic {
+
 // Want to start at 1 (shared ptr must exist to initialize it) to preserv invariant that should never be 0.
+// Memory fence = blocker to not reorder by compiler (compile-time) and CPU (runtime)
+// Note on x86, which has strong memory model (hardware doesn't reorrder loads and stores), acquire/release pair comes for free
 struct control_block {
   atomic<int> cnt = 1;
 };
@@ -78,3 +82,4 @@ public:
 
 };
 
+}

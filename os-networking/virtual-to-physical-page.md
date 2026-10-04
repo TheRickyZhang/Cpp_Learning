@@ -1,6 +1,7 @@
 Context:
 Allocating physical memory (RAM) and virtual memory are separate events
 mmap() will return a virtual memory address immediately, but not actually have any physical page mapped.
+Page = chunk of virtual memory, frame = chunk of physical memory (typically same size)
 
 Possible ways to handle page fault:
 - Demand paging / Demand zero: think if this as flagging the page as "demand zero", where failing means we should get a zero-filled page block from RAM
