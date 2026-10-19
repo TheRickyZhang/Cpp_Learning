@@ -76,6 +76,18 @@ application handles required protocol logic
 Note that most things happen in kernel: when raising hard irq, the CPU stops and 
 
 ## Types of Kernel Bypass
+Vertical (get work off the critical path): three decisions.
+
+Stack: kernel sockets → Onload → ef_vi/TCPDirect. Pick based on how much TCP you’re willing to own.
+Transmit: DMA → PIO → CTPIO. Fewer PCIe round-trips before the first byte hits the wire.
+Where the logic runs: software → FPGA. Only for the simplest, most time-critical reactions.
+
+Horizontal (make it predictable): two habits.
+
+Isolate: dedicated cores, pinned threads, busy-polling, no interrupts, C-states off.
+Pre-allocate: no malloc, no page faults, no syscalls, no locks after startup.
+
+## Other
 - Raw userspace NIC access for market data (Solarflare ef_vi)
 - Userspace TCP/IP stack for order entry, exposes as TCP sockets (TCPDirect)
 

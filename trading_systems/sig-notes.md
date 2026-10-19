@@ -89,3 +89,5 @@ struct MassQuote {
   } entries[count];
 };
 ```
+
+Market data tends to be published before order-entry confirmation or at same time.

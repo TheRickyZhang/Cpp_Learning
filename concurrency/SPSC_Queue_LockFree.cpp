@@ -22,6 +22,47 @@ To give you an idea on impact of some performance, just based on submission timi
 * Think about acquire / release like a sync point among different threads
   */
 
+// Simple version:
+template<typename T>
+class SPSCQueue_ {
+public:
+  // cap must be a power of two
+  explicit SPSCQueue_(size_t n) : a(new T[n]), cap(n), mask(n-1) {}
+  ~SPSCQueue_() { delete[] a; }
+  SPSCQueue_(const SPSCQueue_&) = delete;
+  SPSCQueue_& operator=(const SPSCQueue_&) = delete;
+
+  bool push(const T& x) noexcept requires is_nothrow_copy_assignable_v<T> {
+    size_t t = tail.load(memory_order_relaxed);   // our counter: only we write it
+    size_t h = head.load(memory_order_acquire);   // their counter: sync with consumer's release
+    if(t - h >= cap)  return false;
+    a[pos(t)] = x;
+    tail.store(t+1, memory_order_release);        // publish the write to a[]
+    return true;
+  }
+
+  bool pop(T& out) noexcept requires is_nothrow_move_assignable_v<T> {
+    size_t h = head.load(memory_order_relaxed);   // our counter
+    size_t t = tail.load(memory_order_acquire);   // their counter: sync with producer's release
+    if(h == t)  return false;
+    out = std::move(a[pos(h)]);
+    head.store(h+1, memory_order_release);        // hand the slot back to the producer
+    return true;
+  }
+
+private:
+  T* a;
+  const size_t cap;
+  const size_t mask;
+  size_t pos(size_t i) const noexcept { return i & mask; }
+
+  // [head, tail). Each counter still gets its own cache line, since the producer
+  // writes tail and the consumer writes head.
+  static constexpr size_t ALIGN = hardware_destructive_interference_size;
+  alignas(ALIGN) atomic<size_t> tail{0};
+  alignas(ALIGN) atomic<size_t> head{0};
+};
+
 template<typename T>
 class SPSCQueue {
     // static_assert(std::has_single_bit(N), "capacity must be a power of two");
@@ -43,7 +84,7 @@ public:
   SPSCQueue& operator=(const SPSCQueue& other) = delete;
   SPSCQueue& operator=(SPSCQueue&& other) = delete;
 
-  // Note how we can clearly see the delineation between "our thread" and "other threads", corresponding to the memory order we use
+  // Having cached members means if we detect our queue is full/empty, it might not be, just because the other member hasn't "caught up" yet to our processing. So we just need to then re-update to acquired value, and return false if it still is full/empty.
   bool push(const T& x) noexcept requires is_nothrow_copy_assignable_v<T> {
     size_t& h = p.cached_head;
     size_t t = p.tail.load(memory_order_relaxed);

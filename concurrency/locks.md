@@ -1,15 +1,19 @@
 # Concurrency Primitives
 Lock vs Lock-free:
-*Lock*: use a mutual exclusion primitive to ensure exclusive access. Simpler correctness.
+
+## Lock
+Use a mutual exclusion primitive to ensure exclusive access. Simpler correctness.
 - Preserve invariant by holding lock
 - Block with std::condition_variable
 - Issues: deadlock, ordering, priority inversion, convoying (long processes increase average wait)
-- Use when: low contention / few threads, small critical section
-*Lock-free:* built from atomic operations with progress guarantee. Think of smaller scale locks on a fundamental per-thread level.
+- Use when: low contention, small critical section
+
+## Lock-free
+Built from atomic operations with progress guarantee. Think of smaller scale locks on a fundamental per-thread level.
 - Preserve invariant by atomic logic. Often needs extra data.
 - Block with atomic::wait() / sleep()
 - ABA problem, starvation, hazard pointers for dynamic memory
-- Use when: simple enough to reason about.
+- Use when: simple enough to reason about. Can have bad tail latency since not wait-free.
 
 # Taxonomy (lower -> higher level)
 Mutexes: mutex/shared_mutex

@@ -15,7 +15,7 @@ C++ 17:
 - nested namespaces
 
 C++ 20:
-Most important update, introduced Big 4:
+Most important update, introduced **Big 4**:
 - Concepts
 - Coroutines
 - Ranges
@@ -23,8 +23,8 @@ Most important update, introduced Big 4:
 
 C++ 23:
 More QOL
+- **Deducing this**
 - Multidimensional operator[]
-- Deducing this
 - flat_containers
 - expected
 
