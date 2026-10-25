@@ -9,7 +9,14 @@ using namespace std;
 * Our default string should be empty; it's reasonable to have a size-1 buf of '\0' represent that, but then we would be allocating on every single default constructed string
 * So instead, we can have all empty strings share a shared static null terminator buffer, as long as they don't modify it at all.
 *
+*
+* Implementation notes
+* Remember that it is new char[n], not new char(n)
+* Use delete[]
+* Since a default string is empty, set buf = null term
+* Don't forget to set sz
 */
+
 
 namespace temp {
 

@@ -1,3 +1,6 @@
+2026 talks!
+
+
 https://en.algorithmica.org/hpc/?utm_source=chatgpt.com
 https://github.com/bloomberg/bde/wiki/Bde-Allocator-model?utm_source=chatgpt.com
 

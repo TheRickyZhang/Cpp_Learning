@@ -25,18 +25,16 @@ Note that in user code we have fds, which are only valid in our process's file d
 Regular model for handling sockets is: epoll_wait on sockets that have data, then recv() on them.
 Overall, io_uring generally better, immediately doing some action on data when it's ready and notifying on completion, rather than listing out the ready / recv / do steps. A little more machinery.
 
+# Concise answer
+Normally the NIC DMAs into kernel buffers, and receiving data requires an interrupt, the kernel network stack, a socket wakeup, and a copy into userspace. With ef_vi, I give the NIC buffers that are mapped into my own process, so it DMAs frames directly into my memory and signals completion on a ring I can read from userspace. A pinned thread busy-polls that ring instead of waiting on interrupts, so there’s no kernel entry, no context switch, and no copy. The cost is getting raw Ethernet frames and needing to handle protocol parsing, but that was abstracted away in an internal library that SIG gave to us.
 
 # Normal Path (Remember this!)
 Bytes go from:
 - NIC -> DMA to kernel -> maybe copy to userspace
 
-NIC gets Ethernet frame
+NIC gets Ethernet frame, selects RX queue
         ↓
-NIC selects an RX queue (RSS / hardware steering)
-        ↓
-NIC reads the next RX descriptor, which includes buffer address
-        ↓
-NIC DMAs packet into that buffer and marks descriptor complete
+NIC DMAs packet into next RX descriptor buffer address and marks descriptor complete
         ↓
 NIC raises an IRQ                 [often coalesced, not per packet]
         ↓
@@ -46,7 +44,7 @@ CPU runs hard IRQ handler
         ↓
 NET_RX_SOFTIRQ
         ↓
-driver's NAPI poll() the RX queue (until no more to process, or reach limit)
+driver's NAPI poll() the RX queue (until no more to process, or reach limit. Basically, keep polling if available, otherwise use interrupt-driven)
     process completed descriptors
     create/manage skb representation
     possibly XDP / GRO / checksum offload handling
@@ -62,13 +60,11 @@ wake blocked recv()/epoll_wait()
 typically copy payload kernel → userspace with recv()
 
 # Kernel Bypass Path
-NIC
+NIC gets Ethernet frame, selects userspace-accessible buffer
  ↓
-RX queue
+NIC DMAs packet into next RX descriptor buffer address and marks descriptor complete (we now need to manage buffers)
  ↓
-descriptor → userspace-accessible DMA buffer
- ↓
-userspace CPU polls descriptor ring (NOT the buffer)
+userspace CPU polls descriptor ring
  ↓
 application reads packet directly
  ↓
@@ -87,8 +83,9 @@ Horizontal (make it predictable): two habits.
 Isolate: dedicated cores, pinned threads, busy-polling, no interrupts, C-states off.
 Pre-allocate: no malloc, no page faults, no syscalls, no locks after startup.
 
-## Other
-- Raw userspace NIC access for market data (Solarflare ef_vi)
+## Types of Kernel Bypass
+- Solarflare ef_vi / Generic DPDK: Raw userspace NIC access for market data
+- OpenOnload: bypass kernel, but keep TCP semantics
 - Userspace TCP/IP stack for order entry, exposes as TCP sockets (TCPDirect)
 
 Normally, from NIC to application, the path is:

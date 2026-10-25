@@ -39,7 +39,7 @@ Real-time scheduling: SCHED_FIFO, priority inversion, isolcpus/nohz_full, why yo
 Missing categories (large — spend most time here)
 
 Computer architecture with numbers: cache line size, L1/L2/L3/DRAM latencies (~1/4/10–40/80–100 ns), cross-socket penalty, branch misprediction cost, store buffers (this is what makes seq_cst vs acquire/release concrete), prefetchers, hyperthreading tradeoffs, memory bandwidth. Interviewers ask for numbers here more than anywhere else.
-C++ core: move semantics, copy elision/RVO, virtual dispatch cost vs CRTP/templates, constexpr, alignment/padding, exceptions cost, placement new, allocators, [[likely]]/__builtin_expect, ODR/inlining, UB the compiler exploits. Plus implementation questions: SPSC ring buffer, spinlock with backoff, shared_ptr internals, small-vector/flat-map.
+C++ core: move semantics, copy elision/RVO, virtual dispatch cost vs CRTP/templates, constexpr, alignment/padding, exceptions cost, placement new, allocators, likely/__builtin_expect, ODR/inlining, UB the compiler exploits. Plus implementation questions: SPSC ring buffer, spinlock with backoff, shared_ptr internals, small-vector/flat-map.
 Networking (you're bringing this, but the usual misses are): NIC ring buffers and RSS, kernel bypass mechanics (Onload/ef_vi/DPDK — what gets skipped and why that's faster), hardware timestamping/PTP, multicast joins and gap recovery, Nagle/TCP_NODELAY, socket buffer sizing, busy polling.
 Trading-domain system design: order book data structure choices, feed handler → strategy → order gateway pipeline, where each latency source lives. The integration question "walk me from packet-on-wire to order-out" ties OS, net, arch, and C++ together and exposes gaps a topic-by-topic drill won't.
 

@@ -1,60 +1,45 @@
 #include <bits/stdc++.h>
 using namespace std;
 
-namespace getcracked {
-
-template<class T>
-class ObjectPool {
-  struct Slot {
-    union {
-      Slot* next;
-      alignas(T) char storage[sizeof(T)];
-    };
+template <class T> class ObjectPool {
+  union Slot {
+    Slot* next;                         // valid while the slot is free
+    alignas(T) char storage[sizeof(T)]; // holds a T while the slot is in use
   };
 
-  // Every Slot* in the free list guaranteed to have next field.
-  Slot* free = nullptr;
-  vector<Slot*> chunks;
-  size_t n;
-
-  void grow() {
-    Slot* base = static_cast<Slot*>(::operator new(sizeof(Slot) * n));
-    chunks.push_back(base);
-
-    // Put into free list. Note it is easier and better for performance to prepend into the head.
-    for(size_t i = 0; i < n; ++i){
-      base[i].next = free;
-      free = &base[i];
+public:
+  explicit ObjectPool(size_t n) : slots_(new Slot[n]) {
+    for (size_t i = n; i-- > 0;) {
+      slots_[i].next = free_;
+      free_ = &slots_[i];
     }
   }
-public:
-  explicit ObjectPool(size_t chunk_n_ = 1024) : n(chunk_n_) {
-    grow();
-  }
 
-  ~ObjectPool() {
-    for(Slot* base : chunks) ::operator delete(base);
-  }
+  ~ObjectPool() { delete[] slots_; }
 
-  template<class... Args>
-  T* acquire(Args&&... args) {
-    if(!free) grow();
-    Slot* s = free;
-    free = s->next;
+  ObjectPool(const ObjectPool&) = delete;
+  ObjectPool& operator=(const ObjectPool&) = delete;
 
-    // placement-new constructs T into slot storage
-    return new (s->storage) T(std::forward<Args>(args)...);
+  template <class... Args> T* acquire(Args&&... args) {
+    if (!free_)
+      return nullptr;
+    Slot* s = free_;
+    Slot* nxt = s->next; // save before construction overwrites it
+    T* p = new (s->storage) T(std::forward<Args>(args)...);
+    free_ = nxt; // only after construction succeeds
+    return p;
   }
 
   void release(T* p) {
-    if(!p) return;
+    if (!p)
+      return;
     p->~T();
-
     Slot* s = reinterpret_cast<Slot*>(p);
-    s->next = free;
-    free = s;
+    s->next = free_;
+    free_ = s;
   }
+
+private:
+  Slot* slots_;
+  Slot* free_ = nullptr;
 };
-
-} // namespace getcracked
-
